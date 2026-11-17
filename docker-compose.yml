@@ -1,0 +1,107 @@
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: ap_user
+      POSTGRES_PASSWORD: ap_dev_password_change_me
+      POSTGRES_DB: doc_intelligence
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ap_user -d doc_intelligence"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  minio:
+    image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_dev_only
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/minio/health/live >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  mock-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uvicorn", "doc_pipeline.mock_services.openai_mock:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mock-llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "doc_pipeline.worker.runner"]
+    env_file:
+      - path: .env.example
+        required: true
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mock-llm:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:0.40.16
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+
+volumes:
+  pgdata:
+  miniodata:
+  ollamadata:

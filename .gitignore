@@ -1,0 +1,42 @@
+# Environment and secrets (NEVER commit real API keys)
+.env
+.env.*
+!.env.example
+
+# Python bytecode & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+
+# Runtime data, local databases & MinIO/Inbox artifacts
+*.db
+*.sqlite
+*.sqlite3
+data/synthetic/documents/*
+!data/synthetic/documents/.gitkeep
+data/synthetic/ground_truth/*
+!data/synthetic/ground_truth/.gitkeep
+data/eval_feedback/*
+!data/eval_feedback/.gitkeep
+data/inbox/*
+!data/inbox/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
+data/local_blobs/
+artifacts/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
