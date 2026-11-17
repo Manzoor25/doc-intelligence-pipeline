@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel
 
-from doc_pipeline.ocr.renderer import render_document_to_png_pages, tesseract_available
+from doc_pipeline.ocr.renderer import render_first_page_png, tesseract_available
 
 app = FastAPI(title="Mock OpenAI-Compatible Endpoint", version="1.0.0")
 
@@ -57,16 +57,31 @@ class MockState:
 STATE = MockState()
 
 
-def _compute_ahash(png_bytes: bytes) -> int:
-    """Compute a 64-bit average perceptual hash invariant to minor resize differences."""
-    img = Image.open(io.BytesIO(png_bytes)).convert("L").resize((8, 8), Image.Resampling.BILINEAR)
-    pixels = list(img.getdata())
-    avg = sum(pixels) / 64.0
+def _region_dhash(gray_img: Image.Image, cols: int, rows: int) -> int:
+    resized = gray_img.resize((cols + 1, rows), Image.Resampling.BILINEAR)
+    px = resized.tobytes()
     bits = 0
-    for idx, px in enumerate(pixels):
-        if px >= avg:
-            bits |= 1 << idx
+    bit_idx = 0
+    stride = cols + 1
+    for r in range(rows):
+        row_off = r * stride
+        for c in range(cols):
+            if px[row_off + c] > px[row_off + c + 1]:
+                bits |= 1 << bit_idx
+            bit_idx += 1
     return bits
+
+
+def _compute_ahash(png_bytes: bytes) -> int:
+    """Compute a 512-bit multi-region gradient fingerprint (page + header + footer)."""
+    img = Image.open(io.BytesIO(png_bytes)).convert("L")
+    w, h = img.size
+    full_bits = _region_dhash(img, 16, 16)  # 256 bits
+    header_bits = _region_dhash(img.crop((0, 0, w, max(2, int(h * 0.24)))), 32, 4)  # 128 bits
+    footer_bits = _region_dhash(
+        img.crop((0, int(h * 0.90), w, h)), 32, 4
+    )  # 128 bits (captures AP-REF:: barcode line)
+    return full_bits | (header_bits << 256) | (footer_bits << 384)
 
 
 def _hamming_distance(a: int, b: int) -> int:
@@ -94,10 +109,9 @@ def _ensure_corpus_indexed() -> None:
 
             doc_file = docs_dir / payload["file_name"]
             if doc_file.exists():
-                raw = doc_file.read_bytes()
-                pages, _ = render_document_to_png_pages(raw, mime_type="", dpi=120)
-                if pages:
-                    by_hash.append((_compute_ahash(pages[0]), gt))
+                first_png = render_first_page_png(doc_file.read_bytes(), dpi=110)
+                if first_png:
+                    by_hash.append((_compute_ahash(first_png), gt))
         except Exception:
             continue
 
@@ -283,7 +297,7 @@ def _extract_from_vision_images(images: list[bytes], full_text: str) -> dict[str
             if dist < best_dist:
                 best_dist = dist
                 best_gt = gt
-        if best_gt is not None and best_dist <= 8:
+        if best_gt is not None and best_dist <= 96:
             return json.loads(json.dumps(best_gt))
 
     # Fallback: if Tesseract is installed, OCR page 1 for arbitrary non-corpus uploads
@@ -449,7 +463,10 @@ async def chat_completions(request: Request) -> JSONResponse:
             payload_obj = {
                 "document_type": extracted_doc["document_type"],
                 "language": extracted_doc["language"],
-                "reasoning": f"Header layout and terminology match {extracted_doc['document_type']} ({extracted_doc['language']}).",
+                "reasoning_brief": (
+                    f"Header layout and terminology match "
+                    f"{extracted_doc['document_type']} ({extracted_doc['language']})."
+                ),
             }
         else:
             payload_obj = extracted_doc

@@ -432,6 +432,7 @@ def create_app(
                 submission=submission,
                 session=session,
                 settings=app_cfg,
+                blob_store=request.app.state.blob_store,
                 webhook_client=wh_client,
             )
             session.commit()

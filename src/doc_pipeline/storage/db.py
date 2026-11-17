@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,7 +20,7 @@ def get_engine(database_url: str | None = None) -> Engine:
     url = database_url or get_settings().database_url
     if url not in _engines:
         if url.startswith("sqlite"):
-            connect_args = {"check_same_thread": False}
+            connect_args = {"check_same_thread": False, "timeout": 30}
             if ":memory:" in url:
                 _engines[url] = create_engine(
                     url,
@@ -28,10 +28,27 @@ def get_engine(database_url: str | None = None) -> Engine:
                     poolclass=StaticPool,
                 )
             else:
-                _engines[url] = create_engine(url, connect_args=connect_args)
+                eng = create_engine(url, connect_args=connect_args)
+
+                @event.listens_for(eng, "connect")
+                def _set_sqlite_wal(dbapi_conn, _conn_record) -> None:
+                    cur = dbapi_conn.cursor()
+                    cur.execute("PRAGMA journal_mode=WAL")
+                    cur.execute("PRAGMA synchronous=NORMAL")
+                    cur.execute("PRAGMA busy_timeout=30000")
+                    cur.close()
+
+                _engines[url] = eng
         else:
             _engines[url] = create_engine(url, pool_pre_ping=True, pool_size=10, max_overflow=20)
     return _engines[url]
+
+
+def dispose_engine(database_url: str) -> None:
+    """Close pooled connections and remove an engine (required before deleting SQLite temp files on Windows)."""
+    eng = _engines.pop(database_url, None)
+    if eng is not None:
+        eng.dispose()
 
 
 def make_session_factory(database_url: str | None = None) -> sessionmaker[Session]:

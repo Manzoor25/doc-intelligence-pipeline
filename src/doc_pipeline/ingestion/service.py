@@ -18,7 +18,11 @@ from doc_pipeline.config import Settings
 from doc_pipeline.exports.exporter import export_approved_document
 from doc_pipeline.extraction.extractor import run_extraction_pipeline
 from doc_pipeline.llm.provider import OpenAICompatibleProvider
-from doc_pipeline.ocr.renderer import detect_mime_type, render_document_to_png_pages
+from doc_pipeline.ocr.renderer import (
+    detect_mime_type,
+    extract_embedded_pdf_text,
+    render_document_to_png_pages,
+)
 from doc_pipeline.schemas import ReviewSubmissionRequest
 from doc_pipeline.storage.blob import BlobStore
 from doc_pipeline.storage.db import append_audit_log
@@ -159,11 +163,12 @@ async def process_document_record(
 
     t0 = time.perf_counter()
     doc.status = "processing"
-    session.flush()
+    # Commit before async LLM network calls so no write transaction is held across I/O
+    session.commit()
 
     raw_bytes = blob_store.get_bytes(doc.raw_object_key)
     pages_png = [blob_store.get_bytes(k) for k in doc.page_object_keys]
-    _, embedded_pdf_text = render_document_to_png_pages(raw_bytes, doc.mime_type, dpi=72)
+    embedded_pdf_text = extract_embedded_pdf_text(raw_bytes, doc.mime_type)
 
     result = await run_extraction_pipeline(
         document_id=doc.id,
@@ -301,6 +306,7 @@ async def apply_human_review(
     submission: ReviewSubmissionRequest,
     session: Session,
     settings: Settings,
+    blob_store: BlobStore | None = None,
     reference_date: date | None = None,
     webhook_client: httpx.AsyncClient | None = None,
 ) -> DocumentRecord:
@@ -376,10 +382,18 @@ async def apply_human_review(
             existing_sample.reviewer = submission.reviewer
 
         feedback_dir = Path(settings.eval_feedback_dir)
-        feedback_dir.mkdir(parents=True, exist_ok=True)
+        files_dir = feedback_dir / "files"
+        files_dir.mkdir(parents=True, exist_ok=True)
+        saved_file_path: str | None = None
+        if blob_store is not None:
+            raw_copy_path = files_dir / f"{doc.id}_{doc.file_name}"
+            raw_copy_path.write_bytes(blob_store.get_bytes(doc.raw_object_key))
+            saved_file_path = str(raw_copy_path)
+
         feedback_payload = {
             "document_id": doc.id,
             "file_name": doc.file_name,
+            "file_path": saved_file_path,
             "sha256": doc.file_sha256,
             "raw_object_key": doc.raw_object_key,
             "reviewer": submission.reviewer,

@@ -115,7 +115,7 @@ function renderViewer(doc) {
   const safety = doc.safety_report || {};
   const alertBox = document.getElementById("safetyAlertBox");
   if (safety.injection_detected && (safety.signals || []).length > 0) {
-    const snippets = safety.signals.map((s) => `[${esc(s.pattern_name)}] "${esc(s.matched_snippet)}"`).join(" ; ");
+    const snippets = safety.signals.map((s) => `[${esc(s.pattern_name)}] "${esc(s.matched_excerpt || s.matched_snippet)}"`).join(" ; ");
     alertBox.innerHTML =
       `<strong>SECURITY QUARANTINE — Embedded Prompt Injection Treated as Untrusted Data:</strong><br/>${snippets}`;
     alertBox.classList.remove("hidden");

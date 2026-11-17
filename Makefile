@@ -26,7 +26,7 @@ eval-ci:
 	python -m doc_pipeline.eval.runner --subset ci --in-process-mock --fail-on-regression
 
 test:
-	$(COMPOSE) run --rm api sh -c "ruff check src tests scripts && pytest -v"
+	$(COMPOSE) run --rm --no-deps api sh -c "ruff check src tests scripts && pytest -v"
 
 down:
 	$(COMPOSE) down -v --remove-orphans

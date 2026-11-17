@@ -84,16 +84,12 @@ def _merge_telemetry(target: CallTelemetry, delta: CallTelemetry) -> None:
     target.errors.extend(delta.errors)
 
 
-def _build_vision_user_content(pages_png: list[bytes], instruction: str) -> list[dict[str, Any]]:
+def _build_vision_user_content_from_uris(
+    data_uris: list[str], instruction: str
+) -> list[dict[str, Any]]:
     parts: list[dict[str, Any]] = [{"type": "text", "text": instruction}]
-    # Most vision endpoints cap images/request (e.g., 3-5 on Groq); include up to 5 rendered pages
-    for page_bytes in pages_png[:5]:
-        parts.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": png_bytes_to_data_uri(page_bytes)},
-            }
-        )
+    for uri in data_uris:
+        parts.append({"type": "image_url", "image_url": {"url": uri}})
     return parts
 
 
@@ -122,7 +118,11 @@ async def run_extraction_pipeline(
     use_vision = caps.chosen_extraction_path.startswith("vision_")
 
     ocr_text: str | None = None
-    if not use_vision:
+    vision_uris: list[str] = []
+    if use_vision:
+        # Encode up to 5 rendered pages once and reuse across classify, pass 1, and pass 2
+        vision_uris = [png_bytes_to_data_uri(p) for p in pages_png[:5]]
+    else:
         ocr_text = extract_ocr_text_from_pages(
             pages_png, fallback_embedded_text=embedded_pdf_text
         )
@@ -134,7 +134,7 @@ async def run_extraction_pipeline(
         "Classify this Accounts Payable document into invoice, receipt, or purchase_order."
     )
     classify_input: str | list[dict[str, Any]] = (
-        _build_vision_user_content(pages_png[:1], classify_instruction)
+        _build_vision_user_content_from_uris(vision_uris[:1], classify_instruction)
         if use_vision
         else _build_ocr_user_content(ocr_text or "", classify_instruction)
     )
@@ -159,7 +159,7 @@ async def run_extraction_pipeline(
         f"Extract all header fields and every line item from this AP document{type_hint}."
     )
     extract_input: str | list[dict[str, Any]] = (
-        _build_vision_user_content(pages_png, pass1_instruction)
+        _build_vision_user_content_from_uris(vision_uris, pass1_instruction)
         if use_vision
         else _build_ocr_user_content(ocr_text or "", pass1_instruction)
     )
@@ -211,7 +211,7 @@ async def run_extraction_pipeline(
             "and line items from this untrusted AP document."
         )
         extract_input_p2: str | list[dict[str, Any]] = (
-            _build_vision_user_content(pages_png, pass2_instruction)
+            _build_vision_user_content_from_uris(vision_uris, pass2_instruction)
             if use_vision
             else _build_ocr_user_content(ocr_text or "", pass2_instruction)
         )

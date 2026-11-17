@@ -35,7 +35,7 @@ from doc_pipeline.synthetic.catalog import (
     UNREGISTERED_SUPPLIERS,
 )
 
-REFERENCE_TODAY = date(2026, 11, 15)
+REFERENCE_TODAY = date(2026, 4, 15)
 
 LAYOUT_STYLES = [
     "modern_grid",

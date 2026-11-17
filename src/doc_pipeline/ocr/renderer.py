@@ -125,12 +125,52 @@ def extract_ocr_text_from_pages(
     return "\n\n".join(chunks)
 
 
+def extract_embedded_pdf_text(raw_bytes: bytes, mime_type: str) -> str:
+    """Fast extraction of native PDF text layer without rasterizing bitmaps."""
+    if not (mime_type == "application/pdf" or raw_bytes.startswith(b"%PDF")):
+        return ""
+    parts: list[str] = []
+    pdf = pdfium.PdfDocument(raw_bytes)
+    for idx in range(len(pdf)):
+        page = pdf[idx]
+        textpage = page.get_textpage()
+        txt = textpage.get_text_range()
+        if txt:
+            parts.append(f"--- PDF_TEXT_PAGE {idx + 1} ---\n{txt.strip()}")
+        textpage.close()
+        page.close()
+    pdf.close()
+    return "\n\n".join(parts)
+
+
+def render_first_page_png(raw_bytes: bytes, dpi: int = 96) -> bytes | None:
+    """Render only page 1 quickly for visual fingerprinting."""
+    if raw_bytes.startswith(b"%PDF"):
+        pdf = pdfium.PdfDocument(raw_bytes)
+        if len(pdf) == 0:
+            pdf.close()
+            return None
+        page = pdf[0]
+        bitmap = page.render(scale=dpi / 72.0)
+        pil_img = bitmap.to_pil().convert("RGB")
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG", compress_level=1)
+        page.close()
+        pdf.close()
+        return buf.getvalue()
+    img = Image.open(io.BytesIO(raw_bytes))
+    frame = ImageOps.exif_transpose(img).convert("RGB")
+    buf = io.BytesIO()
+    frame.save(buf, format="PNG", compress_level=1)
+    return buf.getvalue()
+
+
 def png_bytes_to_data_uri(png_bytes: bytes, max_edge: int = 1600) -> str:
     """Resize oversized scans if needed and encode as an OpenAI base64 image_url data URI."""
     img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     if max(img.width, img.height) > max_edge:
         img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    img.save(buf, format="PNG", compress_level=2)
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"

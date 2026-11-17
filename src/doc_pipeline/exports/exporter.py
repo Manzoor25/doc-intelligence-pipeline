@@ -147,7 +147,8 @@ async def export_approved_document(
         payable.exported_at = now
 
     doc.exported_at = now
-    session.flush()
+    # Commit ledger row before outbound HTTP webhook so no DB write lock spans network I/O
+    session.commit()
 
     # Deliver signed webhook to mock/external finance ERP if configured
     webhook_ok = False

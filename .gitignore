@@ -26,6 +26,7 @@ data/synthetic/documents/*
 !data/synthetic/documents/.gitkeep
 data/synthetic/ground_truth/*
 !data/synthetic/ground_truth/.gitkeep
+data/synthetic/manifest.json
 data/eval_feedback/*
 !data/eval_feedback/.gitkeep
 data/inbox/*
