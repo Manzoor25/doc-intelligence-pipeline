@@ -230,6 +230,7 @@ class OpenAICompatibleProvider:
         call_purpose: str = "extract",
         attempt_number: int = 1,
         use_cache: bool = True,
+        write_cache_immediately: bool = True,
         cache_namespace: str = "default",
     ) -> tuple[str, int, int, float, int, bool]:
         """Execute one chat.completions request with concurrency cap, caching, and 429 backoff."""
@@ -281,7 +282,7 @@ class OpenAICompatibleProvider:
                     c_tok = int(usage.completion_tokens) if usage and usage.completion_tokens else 0
                     cost = self._estimate_cost(p_tok, c_tok)
 
-                    if use_cache and cache_key and content:
+                    if use_cache and write_cache_immediately and cache_key and content:
                         self._write_cache(cache_key, content, p_tok, c_tok)
 
                     self._record_metric(
@@ -563,6 +564,7 @@ class OpenAICompatibleProvider:
                     call_purpose="repair" if is_repair else call_purpose,
                     attempt_number=attempt,
                     use_cache=use_cache and not is_repair,
+                    write_cache_immediately=False,
                     cache_namespace=cache_namespace,
                 )
                 last_raw = raw_text
@@ -592,6 +594,11 @@ class OpenAICompatibleProvider:
                 candidate_json = _extract_json_object_text(raw_text)
                 payload = json.loads(candidate_json)
                 validated = schema_cls.model_validate(payload)
+                if use_cache and not is_repair and not hit:
+                    ck = self._compute_cache_key(
+                        messages, response_format, temperature, cache_namespace
+                    )
+                    self._write_cache(ck, raw_text, p_tok, c_tok)
                 return StructuredExtractionOutcome(
                     parsed=validated,
                     raw_text=raw_text,

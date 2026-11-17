@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AP Document Intelligence — Human Review Console</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-group">
+      <div class="brand-icon">AP</div>
+      <div>
+        <h1>Accounts Payable Document Intelligence</h1>
+        <div class="capability-banner" id="capabilityBanner">
+          Probing model endpoint capabilities...
+        </div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="btn btn-secondary" for="uploadInput">
+        + Upload PDF / Scan
+        <input id="uploadInput" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff" hidden />
+      </label>
+      <button class="btn btn-secondary" id="scanInboxBtn" type="button">Scan Inbox Folder</button>
+      <a class="btn btn-primary" href="/api/v1/exports/csv">Download Approved CSV</a>
+    </div>
+  </header>
+
+  <section class="kpi-strip" id="kpiStrip">
+    <div class="kpi-card">
+      <span class="kpi-label">Processed</span>
+      <strong class="kpi-value" id="kpiTotal">0</strong>
+    </div>
+    <div class="kpi-card kpi-good">
+      <span class="kpi-label">Auto / Approved</span>
+      <strong class="kpi-value" id="kpiApproved">0</strong>
+    </div>
+    <div class="kpi-card kpi-warn">
+      <span class="kpi-label">Needs Review</span>
+      <strong class="kpi-value" id="kpiReview">0</strong>
+    </div>
+    <div class="kpi-card kpi-danger">
+      <span class="kpi-label">Injection Quarantined</span>
+      <strong class="kpi-value" id="kpiQuarantined">0</strong>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">Avg Cost / Latency</span>
+      <strong class="kpi-value" id="kpiTelemetry">$0.0000 / 0 ms</strong>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">ERP Webhooks / Eval Gold</span>
+      <strong class="kpi-value" id="kpiExports">0 / 0</strong>
+    </div>
+  </section>
+
+  <main class="workspace">
+    <!-- Left Rail: Review & Document Queue -->
+    <aside class="queue-rail">
+      <div class="rail-header">
+        <div class="filter-tabs" role="tablist">
+          <button class="tab-btn active" data-filter="needs_review" type="button">Review Queue</button>
+          <button class="tab-btn" data-filter="approved" type="button">Approved</button>
+          <button class="tab-btn" data-filter="" type="button">All</button>
+        </div>
+      </div>
+      <div class="doc-list" id="docList">
+        <div class="empty-note">Loading queue...</div>
+      </div>
+    </aside>
+
+    <!-- Center Split Pane: Rendered Document Page Viewer -->
+    <section class="viewer-pane">
+      <div class="pane-toolbar">
+        <div class="doc-meta-title" id="viewerTitle">Select a document from the queue</div>
+        <div class="pager-controls">
+          <button class="btn-sm" id="prevPageBtn" type="button" disabled>&larr; Prev</button>
+          <span id="pageIndicator">Page 0 / 0</span>
+          <button class="btn-sm" id="nextPageBtn" type="button" disabled>Next &rarr;</button>
+          <button class="btn-sm" id="zoomToggleBtn" type="button">Zoom 140%</button>
+          <a class="btn-sm link-btn" id="rawFileLink" href="#" target="_blank" rel="noopener">Raw File</a>
+        </div>
+      </div>
+
+      <div id="safetyAlertBox" class="safety-alert hidden"></div>
+
+      <div class="canvas-stage" id="canvasStage">
+        <div class="empty-viewer" id="emptyViewer">
+          Choose a queued document on the left or upload an invoice, receipt, or purchase order.
+        </div>
+        <img id="pageImage" class="page-image hidden" alt="Rendered AP document page" />
+      </div>
+    </section>
+
+    <!-- Right Split Pane: Extracted Schema Fields, Validation Checks & Corrections -->
+    <section class="editor-pane">
+      <div id="editorEmpty" class="empty-note">No document selected.</div>
+
+      <form id="reviewForm" class="review-form hidden">
+        <div class="status-header" id="docStatusHeader"></div>
+
+        <div id="reasonsBox" class="reasons-box hidden"></div>
+
+        <div class="section-block">
+          <h3>Deterministic Business Validation (Zero-Model Rules)</h3>
+          <div id="validationChecks" class="checks-grid"></div>
+        </div>
+
+        <div class="section-block">
+          <h3>Header Fields &amp; Calibrated Per-Field Confidence</h3>
+          <div class="fields-grid">
+            <div class="field-group">
+              <label>Document Type <span class="conf-pill" data-conf="document_type"></span></label>
+              <select id="f_document_type" required>
+                <option value="invoice">Invoice</option>
+                <option value="receipt">Receipt</option>
+                <option value="purchase_order">Purchase Order</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label>Language</label>
+              <select id="f_language" required>
+                <option value="en">English (en)</option>
+                <option value="de">Deutsch (de)</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label>Document Number <span class="conf-pill" data-conf="document_number"></span></label>
+              <input id="f_document_number" type="text" required />
+            </div>
+            <div class="field-group">
+              <label>Currency <span class="conf-pill" data-conf="currency"></span></label>
+              <select id="f_currency" required>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
+            <div class="field-group span-2">
+              <label>Supplier Name <span class="conf-pill" data-conf="supplier_name"></span></label>
+              <input id="f_supplier_name" type="text" required />
+            </div>
+            <div class="field-group">
+              <label>Supplier Tax / VAT ID <span class="conf-pill" data-conf="supplier_tax_id"></span></label>
+              <input id="f_supplier_tax_id" type="text" />
+            </div>
+            <div class="field-group">
+              <label>Issue Date (YYYY-MM-DD) <span class="conf-pill" data-conf="issue_date"></span></label>
+              <input id="f_issue_date" type="date" required />
+            </div>
+            <div class="field-group">
+              <label>Due Date (Optional) <span class="conf-pill" data-conf="due_date"></span></label>
+              <input id="f_due_date" type="date" />
+            </div>
+            <div class="field-group">
+              <label>Subtotal <span class="conf-pill" data-conf="subtotal"></span></label>
+              <input id="f_subtotal" type="number" step="0.01" min="0" required />
+            </div>
+            <div class="field-group">
+              <label>Tax Amount <span class="conf-pill" data-conf="tax_amount"></span></label>
+              <input id="f_tax_amount" type="number" step="0.01" min="0" required />
+            </div>
+            <div class="field-group">
+              <label>Total Amount <span class="conf-pill" data-conf="total_amount"></span></label>
+              <input id="f_total_amount" type="number" step="0.01" min="0" required />
+            </div>
+            <div class="field-group span-2">
+              <label>Notes / Annotations (Treated Strictly as Inert Data)</label>
+              <input id="f_handwritten_notes" type="text" />
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="line-header-row">
+            <h3>Extracted Line Items <span class="conf-pill" data-conf="line_items"></span></h3>
+            <div class="line-actions">
+              <span id="lineSumHint" class="sum-hint"></span>
+              <button class="btn-sm" id="recalcTotalsBtn" type="button">Recalc Subtotal</button>
+              <button class="btn-sm" id="addLineBtn" type="button">+ Add Line</button>
+            </div>
+          </div>
+          <table class="lines-table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Line Total</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="lineItemsBody"></tbody>
+          </table>
+        </div>
+
+        <div class="section-block reviewer-box">
+          <div class="fields-grid">
+            <div class="field-group">
+              <label>Reviewer Identity</label>
+              <input id="f_reviewer" type="text" value="ap-specialist@acme.example" required />
+            </div>
+            <div class="field-group">
+              <label>Review Note (Audit Log)</label>
+              <input id="f_reviewer_notes" type="text" placeholder="Reason for correction or approval..." />
+            </div>
+          </div>
+          <div class="decision-bar">
+            <button class="btn btn-approve" id="approveBtn" type="submit">
+              Save Corrections &amp; Approve (&rarr; ERP + Eval Gold Set)
+            </button>
+            <button class="btn btn-reject" id="rejectBtn" type="button">
+              Reject Document
+            </button>
+          </div>
+          <div id="toastBanner" class="toast hidden"></div>
+        </div>
+
+        <div class="section-block">
+          <h3>Immutable Audit Trail</h3>
+          <div id="auditTrail" class="audit-list"></div>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -216,3 +216,19 @@ class EvaluationFeedbackSample(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+
+
+class FinanceWebhookReceipt(Base):
+    """Mock downstream Finance ERP ledger storing verified HMAC webhook deliveries."""
+
+    __tablename__ = "finance_webhook_receipts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    document_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    signature_valid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+

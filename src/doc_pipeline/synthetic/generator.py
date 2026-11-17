@@ -12,7 +12,6 @@ import argparse
 import hashlib
 import io
 import json
-import math
 import random
 from datetime import date, timedelta
 from pathlib import Path

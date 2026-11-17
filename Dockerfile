@@ -3,7 +3,7 @@ FROM python:3.12.7-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app/src
+    PYTHONPATH=/app/src:/app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
 COPY scripts /app/scripts
+COPY tests /app/tests
 
 RUN mkdir -p /app/data/synthetic/documents \
              /app/data/synthetic/ground_truth \
