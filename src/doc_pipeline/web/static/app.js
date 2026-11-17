@@ -51,8 +51,16 @@ async function refreshQueue(preserveSelection = true) {
   renderDocList();
 
   if (!preserveSelection || !state.selectedDoc) {
-    if (state.documents.length > 0) {
-      await selectDocument(state.documents[0].id);
+    const urlDocId = new URLSearchParams(window.location.search).get("doc");
+    const urlMatch = urlDocId
+      ? state.documents.find((d) => d.id === urlDocId || d.id.startsWith(urlDocId))
+      : null;
+    const defaultDoc =
+      urlMatch ||
+      state.documents.find((d) => Boolean(d.document_number)) ||
+      state.documents[0];
+    if (defaultDoc) {
+      await selectDocument(defaultDoc.id);
     } else if (state.filter === "needs_review" && sum.total_documents > 0) {
       // Switch to All automatically if review queue is empty
       setActiveFilter("");
@@ -214,14 +222,15 @@ function renderEditor(doc) {
   }
 
   // Deterministic validation checks
-  const checks = ((doc.validation_report || {}).checks) || [];
+  const checks = ((doc.validation_report || {}).results) || ((doc.validation_report || {}).checks) || [];
   document.getElementById("validationChecks").innerHTML = checks.length
     ? checks
         .map((c) => {
           const cls = c.passed ? "check-pass" : c.severity === "warning" ? "check-warn" : "check-fail";
           const icon = c.passed ? "PASS" : c.severity === "warning" ? "WARN" : "FAIL";
+          const label = (c.rule_code || c.rule_name || "RULE").replaceAll("_", " ");
           return `<div class="check-item ${cls}" title="${esc(c.message)}">
-            <span>${esc(c.rule_name.replaceAll("_", " "))}</span>
+            <span>${esc(label)}</span>
             <strong>${icon}</strong>
           </div>`;
         })
@@ -234,10 +243,11 @@ function renderEditor(doc) {
     const key = pill.dataset.conf;
     const fc = fieldConfs[key];
     if (fc) {
-      const pct = Math.round(fc.confidence * 100);
-      pill.className = `conf-pill ${confClass(fc.confidence)}`;
+      const scoreVal = fc.score ?? fc.confidence ?? 0;
+      const pct = Math.round(scoreVal * 100);
+      pill.className = `conf-pill ${confClass(scoreVal)}`;
       pill.textContent = `${pct}%`;
-      pill.title = (fc.reasons || []).join(" | ") || `Pass1/2 Agree=${fc.agreed_across_passes}, Rules=${fc.validation_passed}`;
+      pill.title = (fc.reasons || []).join(" | ") || `Pass1/2 Agree=${fc.two_pass_agreed}`;
     } else {
       pill.className = "conf-pill";
       pill.textContent = "";

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from minio import Minio
+from minio.error import S3Error
 
 from doc_pipeline.config import Settings, get_settings
 
@@ -37,7 +38,11 @@ class MinioBlobStore:
     def _ensure_bucket(self) -> None:
         if not self._bucket_ready:
             if not self._client.bucket_exists(self._bucket):
-                self._client.make_bucket(self._bucket)
+                try:
+                    self._client.make_bucket(self._bucket)
+                except S3Error as exc:
+                    if exc.code not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+                        raise
             self._bucket_ready = True
 
     def put_bytes(

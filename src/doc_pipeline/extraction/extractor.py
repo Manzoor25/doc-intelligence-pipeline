@@ -121,7 +121,10 @@ async def run_extraction_pipeline(
     vision_uris: list[str] = []
     if use_vision:
         # Encode up to 5 rendered pages once and reuse across classify, pass 1, and pass 2
-        vision_uris = [png_bytes_to_data_uri(p) for p in pages_png[:5]]
+        vision_uris = [
+            png_bytes_to_data_uri(p, max_edge=settings.vision_max_image_edge)
+            for p in pages_png[:5]
+        ]
     else:
         ocr_text = extract_ocr_text_from_pages(
             pages_png, fallback_embedded_text=embedded_pdf_text

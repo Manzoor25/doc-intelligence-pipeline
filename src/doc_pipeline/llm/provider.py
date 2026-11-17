@@ -377,6 +377,8 @@ class OpenAICompatibleProvider:
             "required": ["ok"],
             "additionalProperties": False,
         }
+        skip_json_object_probe = False
+        t_schema0 = time.perf_counter()
         try:
             text_out, _, _, _, _, _ = await self._raw_chat_call(
                 messages=[
@@ -395,11 +397,21 @@ class OpenAICompatibleProvider:
                 call_purpose="probe_json_schema",
                 use_cache=False,
             )
+            schema_probe_ms = (time.perf_counter() - t_schema0) * 1000.0
             parsed_probe = json.loads(_extract_json_object_text(text_out))
             if isinstance(parsed_probe, dict) and isinstance(parsed_probe.get("ok"), bool):
-                supports_json_schema = True
-                supports_json_object = True
-                notes.append("Endpoint supports strict json_schema structured output.")
+                if schema_probe_ms > 15_000.0:
+                    supports_json_schema = False
+                    supports_json_object = False
+                    skip_json_object_probe = True
+                    notes.append(
+                        f"json_schema grammar probe took {schema_probe_ms:.0f} ms (>15s CPU GBNF threshold); "
+                        "selecting prompt-guided JSON + Pydantic repair loop."
+                    )
+                else:
+                    supports_json_schema = True
+                    supports_json_object = True
+                    notes.append("Endpoint supports strict json_schema structured output.")
             else:
                 notes.append("Endpoint returned JSON without matching strict probe schema.")
         except APIStatusError as exc:
@@ -411,7 +423,7 @@ class OpenAICompatibleProvider:
             else:
                 notes.append(f"json_schema probe rejected: {type(exc).__name__}")
 
-        if reachable and not supports_json_schema:
+        if reachable and not supports_json_schema and not skip_json_object_probe:
             try:
                 text_out, _, _, _, _, _ = await self._raw_chat_call(
                     messages=[

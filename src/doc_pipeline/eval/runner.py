@@ -547,6 +547,11 @@ async def _async_main() -> int:
         help="Run both Vision path and Tesseract OCR fallback path and print comparison",
     )
     parser.add_argument(
+        "--compare-model",
+        default=None,
+        help="Optional second LLM_MODEL to compare against primary run",
+    )
+    parser.add_argument(
         "--in-process-mock",
         action="store_true",
         help="Evaluate against built-in in-process OpenAI-compatible mock server (CI mode)",
@@ -582,8 +587,8 @@ async def _async_main() -> int:
 
     output_bundle: dict[str, Any] = {"primary": primary}
 
-    if args.compare_ocr:
-        ocr_model = (
+    if args.compare_ocr or args.compare_model:
+        ocr_model = args.compare_model or (
             "mock-text-strict-v1"
             if ("mock" in (args.model or settings.llm_model))
             else (args.model or settings.llm_model)
@@ -592,7 +597,7 @@ async def _async_main() -> int:
             samples=samples,
             base_settings=settings,
             model_override=ocr_model,
-            extraction_mode_override="ocr_text",
+            extraction_mode_override="auto" if args.compare_model else "ocr_text",
             enable_two_pass=False if args.single_pass else None,
             in_process_mock=args.in_process_mock,
         )

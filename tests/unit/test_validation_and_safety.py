@@ -176,6 +176,11 @@ def test_strict_json_schema_inlines_defs_and_forbids_additional_properties() -> 
     assert "$defs" not in schema
     assert schema["additionalProperties"] is False
     assert set(schema["required"]) == set(schema["properties"].keys())
+    assert "maxLength" not in schema["properties"]["document_number"]
+    assert "exclusiveMinimum" not in schema["properties"]["total_amount"]
+    assert "format" not in schema["properties"]["issue_date"]
+    assert "YYYY-MM-DD" in schema["properties"]["issue_date"]["description"]
     item_schema = schema["properties"]["line_items"]["items"]
     assert item_schema["additionalProperties"] is False
     assert set(item_schema["required"]) == set(item_schema["properties"].keys())
+    assert "maxLength" not in item_schema["properties"]["description"]

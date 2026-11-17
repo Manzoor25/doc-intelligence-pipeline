@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, event, select
+from sqlalchemy import Engine, create_engine, event, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -95,15 +95,27 @@ def seed_master_suppliers(session: Session) -> int:
 
 
 def init_db(database_url: str | None = None) -> None:
-    """Create schema tables if missing and seed master suppliers."""
+    """Create schema tables if missing and seed master suppliers (serialized on Postgres)."""
     engine = get_engine(database_url)
-    Base.metadata.create_all(bind=engine)
-    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    with factory() as session:
-        existing_count = len(session.scalars(select(SupplierMaster.id)).all())
-        if existing_count < len(MASTER_SUPPLIERS):
-            seed_master_suppliers(session)
-            session.commit()
+    is_pg = engine.dialect.name == "postgresql"
+    with engine.connect() as lock_conn:
+        if is_pg:
+            lock_conn.execute(text("SELECT pg_advisory_lock(74829104)"))
+            lock_conn.commit()
+        try:
+            Base.metadata.create_all(bind=engine)
+            factory = sessionmaker(
+                bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
+            )
+            with factory() as session:
+                existing_count = len(session.scalars(select(SupplierMaster.id)).all())
+                if existing_count < len(MASTER_SUPPLIERS):
+                    seed_master_suppliers(session)
+                    session.commit()
+        finally:
+            if is_pg:
+                lock_conn.execute(text("SELECT pg_advisory_unlock(74829104)"))
+                lock_conn.commit()
 
 
 def append_audit_log(

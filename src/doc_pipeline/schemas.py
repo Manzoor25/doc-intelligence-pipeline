@@ -199,10 +199,30 @@ def _inline_refs(node: Any, defs: dict[str, Any]) -> Any:
             return _inline_refs(resolved, defs)
 
         cleaned: dict[str, Any] = {}
+        is_date_fmt = node.get("format") == "date"
+        # Strip value-bound facets unsupported by OpenAI/Azure strict json_schema and
+        # known to cause O(N^2) GBNF grammar state blowup in Ollama / llama.cpp;
+        # Pydantic enforces all range/length/date constraints post-parse in Python.
+        stripped_keys = {
+            "$defs",
+            "title",
+            "default",
+            "minLength",
+            "maxLength",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "minItems",
+            "maxItems",
+            "format",
+        }
         for k, v in node.items():
-            if k in ("$defs", "title", "default"):
+            if k in stripped_keys:
                 continue
             cleaned[k] = _inline_refs(v, defs)
+        if is_date_fmt and "description" not in cleaned:
+            cleaned["description"] = "ISO 8601 date formatted YYYY-MM-DD"
 
         # Convert anyOf: [{"type": T}, {"type": "null"}] into clean strict nullable schema
         if "anyOf" in cleaned and isinstance(cleaned["anyOf"], list):

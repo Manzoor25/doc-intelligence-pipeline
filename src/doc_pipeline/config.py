@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     extraction_mode: Literal["auto", "vision", "ocr_text"] = Field(
         default="auto", alias="EXTRACTION_MODE"
     )
+    vision_max_image_edge: int = Field(
+        default=1600, ge=256, le=4096, alias="VISION_MAX_IMAGE_EDGE"
+    )
     enable_two_pass: bool = Field(default=True, alias="ENABLE_TWO_PASS")
     review_confidence_threshold: float = Field(
         default=0.85, ge=0.0, le=1.0, alias="REVIEW_CONFIDENCE_THRESHOLD"
